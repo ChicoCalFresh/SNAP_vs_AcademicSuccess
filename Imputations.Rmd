@@ -1,0 +1,261 @@
+---
+title: "Imputations"
+author: "Shady Shamy"
+date: "2023-10-29"
+output: html_document
+---
+
+
+```{r, cache=FALSE}
+library(mice)
+library(forestplot)
+library(dotwhisker)
+library(tidyr)
+library(gtsummary)
+
+source("./Statewide Analysis/data_management.R")
+
+```
+
+
+
+```{r}
+
+# Note, the calfresh_eligible and food_insecure_2item variable were not included here due to too much colinearity with the variables they are derived from.
+# The variables that are used to make these two variables are imputed and calfresh_eligible and food_insecure_2item are later created
+
+variables_of_interest <- bns_unfiltered %>% 
+  select(eth_hispanic, q7, age, q64, q65, units, q46_1, 
+         q106_3, q106_4, q106_5, monthly_hh_income, household_size,
+         citizenship, firstgen, q15, school)
+
+vector.methods <- c("logreg", "polyreg", "", "polyreg", "polyreg", 
+                    "pmm", "polyreg", "polyreg", "polyreg", "polyreg", 
+                    "polyreg", "pmm", "polyreg", "logreg", "polyreg", "polyreg")
+
+
+```
+
+
+
+
+# Impute Unfilterred Data
+
+```{r}
+
+# prop.table(table(is.na(bns)))
+
+# imp_bns_raw_mids <- mice(variables_of_interest, m=5, maxit=30, seed=500, printFlag=TRUE, method = vector.methods)
+# # Ran with m = 5, maxit = 30
+# 
+# 
+# saveRDS(imp_bns_raw_mids, file = "./Statewide Analysis/imp_bns_raw_mids.RData")
+
+
+imp_bns_raw_mids <- readRDS("./Statewide Analysis/imp_bns_raw_mids.RData")
+
+
+
+```
+
+
+
+
+# Check Imputation methods
+
+```{r}
+
+imp_bns_raw_mids$meth
+
+```
+
+
+# Check Convergence
+
+```{r}
+# Check all the variables
+plot(imp_bns_raw_mids, c('eth_hispanic', 'q7', 'q64', 'q65', 'units', 'q46_1',
+                         'q106_3', 'q106_4', 'q106_5', 'monthly_hh_income', 'household_size',
+                         'citizenship', 'firstgen', 'q15', 'school'))
+
+
+```
+
+
+
+
+
+# Imputation data management
+
+```{r}
+
+# Create a Complete Data Set to be able to manage variables
+imp_bns_long <- complete(imp_bns_raw_mids, action= "long", include = TRUE)
+
+
+
+# Create CalFresh_eligible variable
+imp_bns_long <- imp_bns_long %>% 
+  mutate(m_income = as.numeric(monthly_hh_income, na.rm = TRUE),
+          calfresh_eligible = ifelse((citizenship == "Yes" | citizenship == "Citizen") & 
+                                           ((household_size == 1 & m_income < 3) |
+                                              (household_size == 2 & m_income < 4) |
+                                              (household_size == 3 & m_income < 5) |
+                                              (household_size == 4 & m_income < 6) |
+                                              (household_size == 5 & m_income < 7) |
+                                              (household_size == 6 & m_income < 8) |
+                                              (household_size == 7 & m_income < 9) |
+                                              (household_size == 8 & m_income < 10)), 1, 0)) %>% 
+  select(-m_income)
+
+
+# Check:
+# imp_bns_long %>% select(calfresh_eligible, citizenship, household_size, m_income) %>% unique()
+
+
+# Create Food Insecurity 
+imp_bns_long <- imp_bns_long %>% 
+  mutate(
+    food_insecure_2item = case_when(
+      imp_bns_long$q64 %in% c('Sometimes true', 'Often true') | 
+      imp_bns_long$q65 %in% c('Sometimes true', 'Often true') ~ 1, 
+      imp_bns_long$q64=='Never true' & imp_bns_long$q65== 'Never true' ~ 0
+    )
+  )
+
+# Check:
+# imp_bns_long %>% select(food_insecure_2item, q64, q65) %>% unique()
+
+
+
+# Create course activities variable
+imp_bns_long$course_activities <- recode(imp_bns_long$q106_3, "Strongly disagree" = "0",
+                           "Disagree" = "0",
+                           "Neither agree nor disagree" = "0",
+                           "Agree" = "1",
+                           "Strongly agree" = "1")
+
+
+# Create office hours variable
+imp_bns_long$office_hours <- recode(imp_bns_long$q106_4, "Strongly disagree" = "0",
+                           "Disagree" = "0",
+                           "Neither agree nor disagree" = "0",
+                           "Agree" = "1",
+                           "Strongly agree" = "1")
+
+
+# Create attend class variable
+imp_bns_long$attend_class <- recode(imp_bns_long$q106_5, "Strongly disagree" = "0",
+                           "Disagree" = "0",
+                           "Neither agree nor disagree" = "0",
+                           "Agree" = "1",
+                           "Strongly agree" = "1")
+
+
+
+# Group school
+imp_bns_long$school_grouped <- recode(imp_bns_long$school,
+                             "Allan Hancock Community College" = "CC",
+                             "Butte CC" = "CC", "Mt. SAC CC" = "CC", "Clovis CC" = "CC",
+                             "Palo Verde CC" = "CC", 
+                             "Cal State San Bernardino" = "CSU",
+                             "CSU Bakersfield" = "CSU",
+                             "Fresno State" = "CSU",
+                             "Sacramento State" = "CSU",
+                             "Chico State" = "CSU",
+                             "CSU Dominguez Hills" = "CSU",
+                             "San Francisco State" = "CSU",
+                             "Cal State LA" = "CSU",
+                             "CSU, Northridge" = "CSU",
+                             "UC Berkeley" = "UC")
+
+
+# Count CalFresh as current users
+imp_bns_long <- imp_bns_long %>% 
+  mutate(calfresh = case_when(
+    grepl("Currently use as a college student", q46_1) ~ "CalFresh",
+    grepl("Used it in the past as a college student", q46_1) ~ "No CalFresh",
+    grepl("Heard of it, but never used it", q46_1) ~ "No CalFresh",
+    grepl("Never heard of it", q46_1) ~ "No CalFresh",
+    grepl("Used it before attending college", q46_1) ~ "No CalFresh"))
+
+
+
+# Change Reference
+imp_bns_long$calfresh <- factor(imp_bns_long$calfresh, order = FALSE) %>% 
+  relevel(imp_bns_long$calfresh, ref = "No CalFresh")
+
+# Reword responses for cleaner tables
+imp_bns_long$food_insecure_2item_char <- recode(imp_bns_long$food_insecure_2item, 
+                                                "1" = "Food Insecure", 
+                                                "0" = "Not Food Insecure")
+
+imp_bns_long$calfresh_char <- recode(imp_bns_long$calfresh, 
+                                     "CalFresh" = "SNAP Recipient", 
+                                     "No CalFresh" = "Non Recipient")
+
+
+imp_bns_long$course_activities_char <- recode(imp_bns_long$course_activities, 
+                                              "1" = "Agree", 
+                                              "0" = "Not Agree")
+
+imp_bns_long$office_hours_char <- recode(imp_bns_long$office_hours, 
+                                         "1" = "Agree", 
+                                         "0" = "Not Agree")
+
+imp_bns_long$attend_class_char <- recode(imp_bns_long$attend_class, 
+                                         "1" = "Agree", 
+                                         "0" = "Not Agree")
+
+
+# Reword responses and set reference to women
+imp_bns_long$gender <- case_when(imp_bns_long$q7 == "Man" ~ "Men", 
+                                 imp_bns_long$q7 == "Woman" ~ "Women") %>%
+  factor(order = FALSE) %>%
+  relevel(ref = "Women")
+
+
+
+# Set variables as factors for cleaner tables
+imp_bns_long <- imp_bns_long %>% mutate_at(c("eth_hispanic", "firstgen", "food_insecure_2item", "calfresh", "calfresh_eligible", "q64", "q65", "school"), as.factor)
+
+
+
+# Create Rural Variable
+imp_bns_long$rural <- case_when(imp_bns_long$school == "Butte CC" ~ "Rural",
+                       imp_bns_long$school == "Allan Hancock Community College" ~ "Rural",
+                       imp_bns_long$school == "Cal State LA" ~ "Urban",
+                       imp_bns_long$school == "Cal State San Bernardino" ~ "Urban",
+                       imp_bns_long$school == "Clovis CC" ~ "Urban",
+                       imp_bns_long$school == "CSU Bakersfield" ~ "Urban",
+                       imp_bns_long$school == "CSU Dominguez Hills" ~ "Urban",
+                       imp_bns_long$school == "Mt. SAC CC" ~ "Urban",
+                       imp_bns_long$school == "Palo Verde CC" ~ "Urban",
+                       imp_bns_long$school == "Sacramento State" ~ "Urban",
+                       imp_bns_long$school == "San Francisco State" ~ "Urban",
+                       imp_bns_long$school == "UC Berkeley" ~ "Urban")
+
+
+# Create HSI Variable
+imp_bns_long$HSI <- ifelse(imp_bns_long$school == "UC Berkeley", "Not HSI", "HSI")
+
+
+
+```
+
+
+# Convert back to Mids
+
+```{r}
+
+# Set as mids
+imp_bns_clean_mids_unfiltered <- as.mids(imp_bns_long, .imp = ".imp")
+
+# Save Data Set
+# saveRDS(imp_bns_clean_mids_unfiltered, file = "Statewide Analysis/imp_bns_clean_mids_unfiltered.RData")
+
+
+
+```
+
+

@@ -1,0 +1,673 @@
+---
+title: "Statewide_manuscript_tables"
+author: "Shady Shamy"
+format: html
+execute: 
+  warning: false
+  message: false
+  echo: false
+---
+
+```{r, include=FALSE}
+library(gtsummary)
+library(mice)
+library(effectsize)
+library(tidymodels)
+
+# Non-imputed data (bns, bns_unfiltered)
+source(here::here("Statewide Analysis/data_management.R"))
+
+
+# Load Imputed Data
+imp_bns_clean_mids_unfiltered <- readRDS(here::here("Statewide Analysis/imp_bns_clean_mids_unfiltered.RData"))
+
+
+# Each data set will have slightly different n counts due to filtering, hence, the following steps need to be taken to filter each data set separately and pool the results later
+
+# 1) Create five different data sets from the unfiltered mids
+# 2) Filter Each Data Set and create .imp variable
+for (i in 1:5) {
+data <- imp_bns_clean_mids_unfiltered %>% 
+  complete(action = i) %>%
+  filter(units >= 12,
+        (calfresh_eligible == 1 | calfresh == "CalFresh"), 
+        (gender== "Men" | gender == "Women")
+        ) %>%
+  mutate(.imp = i)
+
+assign(paste0("data_",i),data,.GlobalEnv)
+
+}
+
+# 3) Create a list of the 5 data sets.This will be used to fit a glm on each data set.
+data_list <- list(data_1, data_2, data_3, data_4, data_5)
+
+
+# Create unfiltered imputed data set
+# This is used to create a demographic table of a single unfiltered imputed data set
+
+imp_bns_clean_df_unfiltered <- complete(imp_bns_clean_mids_unfiltered, action = 1)
+
+```
+
+# Study Characteristics
+
+::: panel-tabset
+## Percent Missing Data (Unfiltered Non-imputed Data)
+
+```{r, echo=FALSE}
+
+bns_unfiltered %>%      
+  select(school_grouped, eth_hispanic, gender, age, food_insecure_2item, 
+         units, calfresh, calfresh_eligible, course_activities, office_hours,
+         attend_class) %>%
+  mutate_all(~ ifelse(is.na(.), "Missing", "Not Missing")) %>%
+  tbl_summary(digits = everything() ~ 1)
+
+```
+
+
+## Imputed Vs Non-Imputed Unfiltered
+
+```{r}
+demographics_cc <- bns_unfiltered %>% 
+  select(eth_hispanic, q7, age, food_insecure_2item, q64, q65, units, 
+         calfresh, course_activities, office_hours, attend_class, 
+         calfresh_eligible, monthly_hh_income, household_size, citizenship, 
+         firstgen, q15, school_grouped)
+
+cc <- demographics_cc %>% 
+  tbl_summary(statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"),
+      missing_text= "Missing (n)",
+      digits = list(everything() ~ c(1))) %>% 
+   italicize_labels() 
+
+
+# use data from imp data set #1
+demographics_imp <- imp_bns_clean_df_unfiltered %>% 
+  select(eth_hispanic, q7, age, food_insecure_2item, q64, q65, units, 
+         calfresh, course_activities, office_hours, attend_class, 
+         calfresh_eligible, monthly_hh_income, household_size, citizenship, 
+         firstgen, q15, school_grouped)
+
+imp <- demographics_imp %>% 
+  tbl_summary(statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"),
+      missing_text= "Missing (n)",
+       digits = list(everything() ~ c(1))) %>% 
+   italicize_labels() 
+
+
+tbl_merge(tbls = list(cc, imp), 
+          tab_spanner = c("**Non-Imputed Demographics**", "**Imputed Demographics**"))
+```
+
+## Summary Stats Per Imputation
+
+```{r}
+
+rbind(data_1, data_2, data_3, data_4, data_5) %>%
+   select(gender, eth_hispanic, age, units, school_grouped, HSI, rural, firstgen, food_insecure_2item, calfresh, calfresh_eligible, .imp) %>%
+  tbl_summary(by = .imp,
+              statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"),
+      missing_text= "Missing (n)",
+       digits = list(everything() ~ c(1))) %>%
+   italicize_labels()
+
+```
+
+# Age Mean and Pooled SD: 
+
+```{r}
+
+# 1) Create vector of the means
+averages <- c(mean(data_1$age), mean(data_2$age),
+  mean(data_3$age), mean(data_4$age), mean(data_5$age))
+
+# 2) Average of the means
+aver_mean <- mean(averages)
+
+# 3) Calculate within imputation variance
+# Sum of the variances in each data set divided by m (5)
+within_var <- (var(data_1$age) + var(data_2$age) + var(data_3$age) + var(data_4$age) + var(data_5$age))/5
+
+# 4) Calculate between imputation variance
+# a) Average means of the 5 data sets minus each mean
+# b) Square each difference
+# c) Sum results
+# d) Divide by m - 1 (5 - 1)
+between_var <- sum((averages - aver_mean)^2) / (5 - 1)
+
+# 5) Calculate total variance. Variance within + variance between + variance between / m (5)
+total_var <- within_var + between_var + (between_var/5)
+
+# 6) Square root of total variance = pooled standard error
+sqrt(total_var)
+
+# Display Mean
+aver_mean
+
+```
+
+
+# Units Mean and Pooled SD:
+
+```{r}
+
+# 1) Create vector of the means
+averages2 <- c(mean(data_1$units), mean(data_2$units),
+  mean(data_3$units), mean(data_4$units), mean(data_5$units))
+
+# 2) Average of the means
+aver_mean2 <- mean(averages2)
+
+# 3) Calculate within imputation variance
+# Sum of the variances in each data set divided by m (5)
+within_var2 <- (var(data_1$units) + var(data_2$units) + var(data_3$units) + var(data_4$units) + var(data_5$units))/5
+
+
+# 4) Calculate between imputation variance
+# a) Average means of the 5 data sets minus each mean
+# b) Square each difference
+# c) Sum results
+# d) Divide by m - 1 (5 - 1)
+between_var2 <- sum((averages2 - aver_mean2)^2) / (5 - 1)
+
+
+# 5) Calculate total variance. Variance within + variance between + variance between / m (5)
+total_var2 <- within_var2 + between_var2 + (between_var2/5)
+
+
+# 6) Square root of total variance = pooled standard error
+sqrt(total_var2)
+
+# Display Mean
+aver_mean2
+
+```
+
+
+## Campus Type Vs Food Insecurity Chi Squared
+
+```{r, echo=FALSE}
+
+# Data from Imputed data set 1
+chisq.test(data_1$food_insecure_2item, data_1$school_grouped, correct = FALSE)
+
+```
+
+> There was significance between school types
+
+
+
+## Table 1 Original data set vs Filtered Imputed data set
+
+```{r, echo=FALSE}
+
+
+# Create demographic data sets to use in gt_summary
+demographics_cc2 <- bns_unfiltered %>% 
+  select(gender, eth_hispanic, age, units, school_grouped, HSI, rural, firstgen, food_insecure_2item, calfresh, calfresh_eligible) %>% 
+  tbl_summary(statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"),
+      missing_text= "Missing (n)",
+      digits = list(everything() ~ c(1)))
+
+
+# Data from first imputed data set
+demographics_imp2 <- data_1 %>% select(gender, eth_hispanic, age, units, school_grouped, HSI, rural, firstgen, food_insecure_2item, calfresh, calfresh_eligible) %>% 
+  tbl_summary(statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"),
+      missing_text= "Missing (n)",
+      digits = list(everything() ~ c(1)))
+
+
+
+tbl_merge(tbls = list(demographics_cc2, demographics_imp2), 
+          tab_spanner = c("**Original Non-Imputed Demographics**", "**Imputed Demographics**"))
+
+```
+:::
+
+# RQ 1: SNAP Vs Food Insecurity
+
+
+::: panel-tabset
+
+## Table 2 Food Insecurity vs SNAP participation and Campus Type (Imp Data)
+
+
+```{r, echo=FALSE}
+
+for (i in seq_along(data_list)) {
+
+tbl2. <- data_list[[i]] %>% select(food_insecure_2item_char, calfresh_char, school_grouped) %>% 
+  tbl_summary(by = food_insecure_2item_char, percent = "row",
+    statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"
+    ), missing = "no",
+    digits = list(everything() ~ c(1))) %>%
+   modify_header(label ~ "**Characteristic**")
+  
+  
+  assign(paste0("tbl2.",i), tbl2.,.GlobalEnv) 
+  
+}
+
+
+# Merge Tables
+tbl_merge(tbls = list(tbl2.1, tbl2.2, tbl2.3, tbl2.4, tbl2.5), 
+          tab_spanner = c("Imp 1", "Imp 2","Imp 3","Imp 4","Imp 5"))
+
+```
+
+
+
+
+## Table 3 Food insecure vs Calfresh Logistic Regressions (Imp Data)
+
+```{r}
+
+
+# Fit Food Security Model for every data set and save each
+
+for (i in seq_along(data_list)) {
+
+mod.FS <- glm(food_insecure_2item ~ calfresh + gender + age + eth_hispanic + 
+                units + school_grouped + firstgen, 
+              family = binomial(link = "logit"), 
+              data = data_list[[i]])
+
+
+assign(paste0("mod.FS",i), mod.FS,.GlobalEnv) 
+  
+  }
+
+
+# Set models as a list, then as mira, then pool results with tbl_regression, and calculate Cohen's D
+# Log = False since values are exponentiated
+list(mod.FS1, mod.FS2, mod.FS3, mod.FS4, mod.FS5) %>% 
+  as.mira() %>% 
+  tbl_regression(exponentiate = TRUE) %>% bold_p() %>%
+  modify_table_body( ~ .x %>%        
+        mutate(cohens = round(oddsratio_to_d(estimate, log = FALSE), digits = 3))) %>%
+  # assigning header labels
+  modify_header(cohens = "**Cohen's D**")
+
+
+
+
+```
+
+## Model Accuracy
+
+```{r}
+
+# Compute accuracy for each data set
+
+for (i in seq_along(data_list)) {
+
+# Create Model
+fi_model <- glm(food_insecure_2item ~ calfresh + gender + age + eth_hispanic + units + school_grouped + firstgen, data = data_list[[i]], family = binomial(link = "logit"))
+
+# Set Seed
+set.seed(12345)
+
+# Predict Values
+fi_model_pred <- predict(fi_model, type='response')
+
+
+# Create data frame of predicted probability, predicted value, and truth
+accuracy <- data.frame(pred.prob = fi_model_pred, 
+                       pred.class = rbinom(n = length(fi_model_pred), 
+                                           size = 1, 
+                                           p = fi_model_pred),
+                       truth = fi_model$y)
+
+# Relabel Values
+accuracy <- accuracy %>% 
+            mutate(pred.class = factor(pred.class, labels=c("Food Insecure", "Not Food Insecure")), 
+                    truth = factor(truth, labels=c("Food Insecure", "Not Food Insecure")))
+
+# Create table of predicted values vs truth
+fs_table <- table(accuracy$pred.class, accuracy$truth)
+
+
+# Compute accuracy by adding correctly predicted values and dividing by total responses
+fs_accuracy <- (fs_table[1,1] + fs_table[2,2]) / (fs_table[1,1] + fs_table[2,2] + fs_table[1,2] + fs_table[2,1])
+
+
+assign(paste0("fs_accuracy",i), fs_accuracy,.GlobalEnv) 
+
+}
+
+
+```
+
+> These models have a 52% - 55% Accuracy
+
+
+
+:::
+
+
+
+# RQ 2: SNAP Vs Academic Success
+
+::: panel-tabset
+
+
+## Table 4: Percent of respondents who agree that they had enough time for the following activities, by SNAP participation. (Imp Data)
+
+```{r, echo=FALSE}
+
+for (i in seq_along(data_list)) {
+
+tbl4. <- data_list[[i]] %>% select(course_activities_char, office_hours_char, attend_class_char, calfresh_char) %>% 
+  tbl_summary(by = calfresh_char,
+    statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"
+    ), missing = "no",
+    digits = list(everything() ~ c(1))) %>% modify_header(label ~ "**SNAP Participation**")
+
+    assign(paste0("tbl4.",i), tbl4.,.GlobalEnv) 
+  
+}
+  
+# Merge Tables
+tbl_merge(tbls = list(tbl4.1, tbl4.2, tbl4.3, tbl4.4, tbl4.5), 
+          tab_spanner = c("Imp 1", "Imp 2","Imp 3","Imp 4","Imp 5"))
+
+```
+
+## Table 5: Logistic Regressions for academic success vs SNAP (Imp Data)
+
+```{r}
+
+# Fit Course Activities Model for every data set and save each
+
+for (i in seq_along(data_list)) {
+
+mod.CA <- glm(course_activities ~ calfresh + gender + age + eth_hispanic + units + school_grouped + food_insecure_2item + firstgen, family = binomial(link = "logit"), data = data_list[[i]])
+
+
+assign(paste0("mod.CA",i),mod.CA,.GlobalEnv) 
+  
+
+}
+
+# Set models as a list, then as mira, and then pool results with tbl_regression, and calculate Cohen's D
+
+imp.mod1 <- list(mod.CA1, mod.CA2, mod.CA3, mod.CA4, mod.CA5) %>% as.mira() %>% tbl_regression(exponentiate = TRUE) %>% bold_p() %>%
+  modify_table_body( ~ .x %>%        
+        mutate(cohens = round(oddsratio_to_d(estimate, log = FALSE), digits = 3))) %>%
+  # assigning header labels
+  modify_header(cohens = "**Cohen's D**")
+
+
+
+
+# Fit Office Hours Model for every data set and save each
+
+for (i in seq_along(data_list)) {
+
+mod.OH <- glm(office_hours ~ calfresh + gender + age + eth_hispanic + units + school_grouped + food_insecure_2item + firstgen, family = binomial(link = "logit"), data = data_list[[i]])
+
+
+assign(paste0("mod.OH",i), mod.OH,.GlobalEnv) 
+  
+  }
+
+# Set models as a list, then as mira, and then pool results with tbl_regression, and calculate Cohen's D
+
+imp.mod2 <- list(mod.OH1, mod.OH2, mod.OH3, mod.OH4, mod.OH5) %>% as.mira() %>% tbl_regression(exponentiate = TRUE) %>% bold_p() %>%
+  modify_table_body( ~ .x %>%        
+        mutate(cohens = round(oddsratio_to_d(estimate, log = FALSE), digits = 3))) %>%
+  # assigning header labels
+  modify_header(cohens = "**Cohen's D**")
+
+
+
+
+
+# Fit Attend Class Model for every data set and save each
+
+for (i in seq_along(data_list)) {
+
+mod.AC <- glm(attend_class ~ calfresh + gender + age + eth_hispanic + units + school_grouped + food_insecure_2item + firstgen, family = binomial(link = "logit"), data = data_list[[i]])
+
+
+assign(paste0("mod.AC",i), mod.AC,.GlobalEnv) 
+  
+  }
+
+# Set models as a list, then as mira, and then pool results with tbl_regression, and calculate Cohen's D
+
+imp.mod3 <- list(mod.AC1, mod.AC2, mod.AC3, mod.AC4, mod.AC5) %>% as.mira() %>% tbl_regression(exponentiate = TRUE) %>% bold_p() %>%
+  modify_table_body( ~ .x %>%        
+        mutate(cohens = round(oddsratio_to_d(estimate, log = FALSE), digits = 3))) %>%
+  # assigning header labels
+  modify_header(cohens = "**Cohen's D**")
+
+
+
+
+
+# Merge Tables
+tbl_merge(tbls = list(imp.mod1, imp.mod2, imp.mod3), tab_spanner = c("Course Activities", "Office Hours", "Attend Class"))
+
+
+```
+
+
+
+## VIF of model 1 (Course Activities)
+
+```{r}
+
+# Data from first imputed data set
+
+mod.1 <- glm(course_activities ~ calfresh + gender + age + eth_hispanic + units + food_insecure_2item,  data = data_1, family = binomial(link = "logit"))
+
+car::vif(mod.1)
+
+
+```
+
+## VIF of model 2 (office Hours)
+
+```{r}
+
+# Data from first imputed data set
+mod.2 <- glm(office_hours ~ calfresh + gender + age + eth_hispanic + units + food_insecure_2item,  data = data_1, family = binomial(link = "logit"))
+
+car::vif(mod.2)
+
+
+```
+
+## VIF of model 3 (Attend Class)
+
+```{r}
+# Data from first imputed data set
+mod.3 <- glm(attend_class ~ calfresh + gender + age + eth_hispanic + units + food_insecure_2item,  data = data_1, family = binomial(link = "logit"))
+
+car::vif(mod.3)
+
+
+```
+
+
+## Accuracy of model 1 (Course Activities)
+
+```{r}
+
+# Compute accuracy for each data set
+
+for (i in seq_along(data_list)) {
+
+# Create Model
+CA_model <- glm(course_activities ~ calfresh + gender + age + eth_hispanic + units + food_insecure_2item, data = data_list[[i]], family = binomial(link = "logit"))
+
+# Set Seed
+set.seed(12345)
+
+# Predict Values
+CA_model_pred <- predict(CA_model, type='response')
+
+
+# Create data frame of predicted probability, predicted value, and truth
+accuracy2 <- data.frame(pred.prob = CA_model_pred, 
+                       pred.class = rbinom(n = length(CA_model_pred), 
+                                           size = 1, 
+                                           p = CA_model_pred),
+                       truth = CA_model$y)
+
+# Relabel Values
+accuracy2 <- accuracy2 %>% 
+            mutate(pred.class = factor(pred.class, labels=c("Agree", "Not Agree")), 
+                    truth = factor(truth, labels=c("Agree", "Not Agree")))
+
+# Create table of predicted values vs truth
+CA_table <- table(accuracy2$pred.class, accuracy2$truth)
+
+
+# Compute accuracy by adding correctly predicted values and dividing by total responses
+CA_accuracy <- (CA_table[1,1] + CA_table[2,2]) / (CA_table[1,1] + CA_table[2,2] + CA_table[1,2] + CA_table[2,1])
+
+
+assign(paste0("CA_accuracy",i), CA_accuracy,.GlobalEnv) 
+
+}
+
+
+```
+
+> These modeled have 49% - 52% accuracy
+
+
+
+## Accuracy of model 2 (Office Hours)
+
+```{r}
+
+# Compute accuracy for each data set
+
+for (i in seq_along(data_list)) {
+
+# Create Model
+OH_model <- glm(office_hours ~ calfresh + gender + age + eth_hispanic + units + food_insecure_2item, data = data_list[[i]], family = binomial(link = "logit"))
+
+# Set Seed
+set.seed(12345)
+
+# Predict Values
+OH_model_pred <- predict(OH_model, type='response')
+
+
+# Create data frame of predicted probability, predicted value, and truth
+accuracy3 <- data.frame(pred.prob = OH_model_pred, 
+                       pred.class = rbinom(n = length(OH_model_pred), 
+                                           size = 1, 
+                                           p = OH_model_pred),
+                       truth = OH_model$y)
+
+# Relabel Values
+accuracy3 <- accuracy3 %>% 
+            mutate(pred.class = factor(pred.class, labels=c("Agree", "Not Agree")), 
+                    truth = factor(truth, labels=c("Agree", "Not Agree")))
+
+# Create table of predicted values vs truth
+OH_table <- table(accuracy3$pred.class, accuracy3$truth)
+
+
+# Compute accuracy by adding correctly predicted values and dividing by total responses
+OH_accuracy <- (OH_table[1,1] + OH_table[2,2]) / (OH_table[1,1] + OH_table[2,2] + OH_table[1,2] + OH_table[2,1])
+
+
+assign(paste0("OH_accuracy",i), OH_accuracy,.GlobalEnv) 
+
+}
+
+
+```
+
+> These models has 51% - 54% accuracy
+
+
+## Accuracy of model 3 (Attend Class)
+
+```{r}
+
+# Compute accuracy for each data set
+
+for (i in seq_along(data_list)) {
+
+# Create Model
+AC_model <- glm(attend_class ~ calfresh + gender + age + eth_hispanic + units + food_insecure_2item, data = data_list[[i]], family = binomial(link = "logit"))
+
+# Set Seed
+set.seed(12345)
+
+# Predict Values
+AC_model_pred <- predict(AC_model, type='response')
+
+
+# Create data frame of predicted probability, predicted value, and truth
+accuracy4 <- data.frame(pred.prob = AC_model_pred, 
+                       pred.class = rbinom(n = length(AC_model_pred), 
+                                           size = 1, 
+                                           p = AC_model_pred),
+                       truth = AC_model$y)
+
+# Relabel Values
+accuracy4 <- accuracy4 %>% 
+            mutate(pred.class = factor(pred.class, labels=c("Agree", "Not Agree")), 
+                    truth = factor(truth, labels=c("Agree", "Not Agree")))
+
+# Create table of predicted values vs truth
+AC_table <- table(accuracy4$pred.class, accuracy4$truth)
+
+
+# Compute accuracy by adding correctly predicted values and dividing by total responses
+AC_accuracy <- (AC_table[1,1] + AC_table[2,2]) / (AC_table[1,1] + AC_table[2,2] + AC_table[1,2] + AC_table[2,1])
+
+
+assign(paste0("AC_accuracy",i), AC_accuracy,.GlobalEnv) 
+
+}
+
+
+```
+
+> These models have 64% - 65% accuracy
+
+
+## Table 6: Self-Reported Impact of SNAP (CC Data)
+
+```{r}
+# Only select current CalFresh Users or past users as college students
+# Use filtered data
+bns %>% filter(q46_1 == "Currently use as a college student" | 
+                 q46_1 == "Used it in the past as a college student") %>% 
+  select(SNAP_course_activities, SNAP_office_hours, SNAP_attend_class, SNAP_not_worry_abt_food) %>% 
+  tbl_summary(statistic = list(
+      all_continuous() ~ "Mean: {mean}, Median: {median}, SD: {sd}",
+      all_categorical() ~ "{n} ({p}%)"), missing = "no",
+      digits = list(everything() ~ c(1)))
+
+
+```
+
+> These variables were not imputed due to large amounts of missing data from skip logic
+
+:::
