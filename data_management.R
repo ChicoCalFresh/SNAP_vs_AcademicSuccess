@@ -88,20 +88,6 @@ bns <- bns %>% mutate(calfresh = case_when(
   grepl("Used it before attending college", q46_1) ~ "No CalFresh"))
 
 
-# Group schools
-bns$school_grouped <- recode(bns$school,
-                              "Allan Hancock Community College" = "CC",
-                              "Butte CC" = "CC", "Mt. SAC CC" = "CC", "Clovis CC" = "CC",
-                              "Palo Verde CC" = "CC", 
-                              "Cal State San Bernardino" = "CSU",
-                              "CSU Bakersfield" = "CSU",
-                              "Sacramento State" = "CSU",
-                              "CSU Dominguez Hills" = "CSU",
-                              "San Francisco State" = "CSU",
-                              "Cal State LA" = "CSU",
-                              "UC Berkeley" = "UC")
-
-
 
 # Remove NAs from citizenship questions from skip logic (to use in imputations)
 
