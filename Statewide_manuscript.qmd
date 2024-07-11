@@ -1,11 +1,14 @@
 ---
-title: "Statewide_manuscript_tables"
-author: "Shady Shamy"
-format: html
+title: "SNAP vs Academic Success Manuscript Tables/Code"
+format: 
+  html:
+    code-fold: true
+    code-summary: "Show code"
+    self-contained: true
 execute: 
   warning: false
   message: false
-  echo: false
+
 ---
 
 ```{r, include=FALSE}
@@ -55,7 +58,7 @@ imp_bns_clean_df_unfiltered <- complete(imp_bns_clean_mids_unfiltered, action = 
 ::: panel-tabset
 ## Percent Missing Data (Unfiltered Non-imputed Data)
 
-```{r, echo=FALSE}
+```{r}
 
 bns_unfiltered %>%      
   select(school_grouped, eth_hispanic, gender, age, food_insecure_2item, 
@@ -194,7 +197,7 @@ aver_mean2
 
 ## Campus Type Vs Food Insecurity Chi Squared
 
-```{r, echo=FALSE}
+```{r}
 
 # Data from Imputed data set 1
 chisq.test(data_1$food_insecure_2item, data_1$school_grouped, correct = FALSE)
@@ -207,7 +210,7 @@ chisq.test(data_1$food_insecure_2item, data_1$school_grouped, correct = FALSE)
 
 ## Table 1 Original data set vs Filtered Imputed data set
 
-```{r, echo=FALSE}
+```{r}
 
 
 # Create demographic data sets to use in gt_summary
@@ -244,7 +247,7 @@ tbl_merge(tbls = list(demographics_cc2, demographics_imp2),
 ## Table 2 Food Insecurity vs SNAP participation and Campus Type (Imp Data)
 
 
-```{r, echo=FALSE}
+```{r}
 
 for (i in seq_along(data_list)) {
 
@@ -367,7 +370,7 @@ assign(paste0("fs_accuracy",i), fs_accuracy,.GlobalEnv)
 
 ## Table 4: Percent of respondents who agree that they had enough time for the following activities, by SNAP participation. (Imp Data)
 
-```{r, echo=FALSE}
+```{r}
 
 for (i in seq_along(data_list)) {
 
