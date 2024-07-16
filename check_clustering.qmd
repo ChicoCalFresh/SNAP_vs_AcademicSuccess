@@ -1,0 +1,114 @@
+---
+title: "Check a correlated model"
+author: "Robin Donatello"
+format: html
+execute: 
+  warning: false
+  message: false
+  echo: false
+---
+
+# Purpose
+To see if a hierarchical model allowing for the correlation of student reponses within sector is appropriate. 
+
+```{r, include=FALSE}
+library(mice)
+library(lme4)
+#library(effectsize)
+#library(tidymodels)
+
+# Non-imputed data (bns, bns_unfiltered)
+source(here::here("Statewide Analysis/data_management.R"))
+
+
+# Load Imputed Data
+imp_bns_clean_mids_unfiltered <- readRDS(here::here("Statewide Analysis/imp_bns_clean_mids_unfiltered.RData"))
+
+
+# Each data set will have slightly different n counts due to filtering, hence, the following steps need to be taken to filter each data set separately and pool the results later
+
+# 1) Create five different data sets from the unfiltered mids
+# 2) Filter Each Data Set and create .imp variable
+for (i in 1:5) {
+data <- imp_bns_clean_mids_unfiltered %>% 
+  complete(action = i) %>%
+  filter(units >= 12,
+        (calfresh_eligible == 1 | calfresh == "CalFresh"), 
+        (gender== "Men" | gender == "Women")
+        ) %>%
+  mutate(.imp = i)
+
+assign(paste0("data_",i),data,.GlobalEnv)
+
+}
+
+# 3) Create a list of the 5 data sets.This will be used to fit a glm on each data set.
+data_list <- list(data_1, data_2, data_3, data_4, data_5)
+
+```
+
+Final model: `glm(food_insecure_2item ~ calfresh + gender + age + eth_hispanic + units + school_grouped + firstgen, data = data_list[[i]], family = binomial)`
+
+# Fit multilevel model
+
+Only going to check this on 1-2 of the imputed data sets. If a high ICC is observed and decision is made to go with a HLM then proper analysis post imputation will be used. 
+
+```{r}
+for (i in seq_along(data_list)) {
+  test <- glmer(food_insecure_2item ~ calfresh + gender + age + eth_hispanic + 
+                  units + firstgen + (1|school_grouped), 
+                  data = data_list[[i]], family = "binomial", 
+                  control = glmerControl(optimizer = "bobyqa"))
+  summary(test)
+}
+```
+
+4 out of 5 data sets have a boundary/convergence issue. 
+
+```{r}
+glmer1 <- glmer(food_insecure_2item ~ calfresh + gender + age + eth_hispanic + 
+                units + firstgen + (1|school_grouped), 
+                data = data_1, family = "binomial", 
+                control = glmerControl(optimizer = "bobyqa"))
+summary(glmer1)
+VarCorr(glmer1)
+sjPlot::tab_model(glmer1, show.r2=FALSE)
+```
+
+ICC and random intercept variance super close to 0. 
+Compare coefficient results. 
+
+```{r}
+glm.1 <- glm(food_insecure_2item ~ calfresh + gender + age + eth_hispanic + 
+                units + firstgen + school_grouped, 
+                data = data_1, family = "binomial")
+sjPlot::tab_model(glm.1, show.r2=FALSE)
+```
+
+
+Decision: A correlated model is not needed. Increased complexity of the model not warranted, no meaningful change in coefficients or large enough ICC. 
+
+## SNAP vs academic success
+
+```{r}
+sac.glm <- glm(course_activities ~ calfresh + gender + age + eth_hispanic + units + school_grouped + food_insecure_2item + firstgen, 
+               family = binomial(link = "logit"), data = data_2)
+
+sac.glmer <- glmer(course_activities ~ calfresh + gender + age +
+                     eth_hispanic + units  + food_insecure_2item +
+                     firstgen + (1|school_grouped), 
+               data = data_2, family = "binomial", 
+               control = glmerControl(optimizer = "bobyqa"))
+```
+
+```{r}
+#| layout-ncol: 2
+sjPlot::tab_model(sac.glm, show.r2=FALSE)
+sjPlot::tab_model(sac.glmer, show.r2=FALSE)
+```
+
+Same decision. 
+
+
+
+
