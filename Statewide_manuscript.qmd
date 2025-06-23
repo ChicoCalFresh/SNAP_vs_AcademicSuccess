@@ -16,6 +16,8 @@ library(gtsummary)
 library(mice)
 library(effectsize)
 library(tidymodels)
+library(grid)
+library(forestploter)
 
 # Non-imputed data (bns, bns_unfiltered)
 source(here::here("Statewide Analysis/data_management.R"))
@@ -674,3 +676,588 @@ bns %>% filter(q46_1 == "Currently use as a college student" |
 > These variables were not imputed due to large amounts of missing data from skip logic
 
 :::
+
+
+
+
+
+# Figures
+
+
+::: panel-tabset
+
+
+# Figure 1: SNAP vs FI
+
+```{r}
+library(sjPlot)
+
+df1_1 <- data_1 %>% select(c(food_insecure_2item_char, calfresh, school_grouped)) %>% tidyr::pivot_longer(cols = c(calfresh, school_grouped))
+
+
+df1_1 <- df1_1 %>%
+  count(food_insecure_2item_char, name, value) %>%
+  group_by(name, value) %>%  # Grouping within bars
+  mutate(percent = round(100 * n / sum(n), 1),
+         label = paste0("n = ", n, "\n(", round(percent, 1), "%)"))
+
+
+df1_1$value <- recode(df1_1$value, "CC" = "CCC",
+                      "No CalFresh" = "Non Recipient",
+                      "CalFresh" = "SNAP Recipient")
+
+
+p3 <- ggplot(df1_1, aes(x = value, y = percent, fill = food_insecure_2item_char)) +
+  geom_bar(stat = "identity", position = "dodge") + ylab("Percent") +
+  geom_text(aes(label = label),
+            position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 4) + ylim(0, 100) + 
+  scale_fill_manual(values = c("#377eb8", "#b5e2ff")) +
+  xlab("") +  theme_bw() + theme(text = element_text(size = 14)) +
+  labs(fill = "")
+
+
+
+
+# 
+# ggplot2::ggsave(filename = "Figure1.png", plot = p3,
+#                 dpi = 600,
+#                 width = 10, height = 5, units = "in")
+
+
+
+
+
+
+# BW Plot ----------------------------------------------------------------
+
+
+p3.1 <- ggplot(df1_1, aes(x = value, y = percent, fill = food_insecure_2item_char)) +
+  geom_bar(stat = "identity", position = "dodge") + ylab("Percent") +
+  geom_text(aes(label = label),
+            position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 4) + ylim(0, 100) + 
+  scale_fill_manual(values = c("#000000", "#444444")) +
+  xlab("") + theme_bw() + theme(text = element_text(size = 14)) +
+  labs(fill = "")
+
+
+
+
+
+# ggplot2::ggsave(filename = "Figure1_BW.png", plot = p3.1,
+#                 dpi = 600,
+#                 width = 10, height = 5, units = "in")
+
+
+
+```
+
+
+# Figure 2
+
+```{r}
+
+
+# Create Data Frame
+
+dt2 <- data.frame(
+  "Variable" = c("SNAP Recipient",
+                 "Men",
+                 "Age",
+                 "Hispanic/Latino",
+                 "Enrolled Units",
+               "Campus Type",
+               "     CCC (Ref)",
+               "     CSU",
+               "     UC",
+               "First-Generation Student"),
+  OR1 = c(1.43, 0.72, 1.03, 1.08, 0.98, "", "", 1.07, 0.75, 1.63),
+  ci_low1 = c(1.08, 0.52, 1.01, 0.80, 0.93, "", "", 0.80, 0.46, 0.94),
+  ci_high1 = c(1.91, 0.98, 1.05, 1.44, 1.04, "", "", 1.43, 1.21, 2.81)
+  
+)
+
+
+## Convert to Numeric
+
+dt2$OR1 <- as.numeric(dt2$OR1)
+dt2$ci_low1 <- as.numeric(dt2$ci_low1)
+dt2$ci_high1 <- as.numeric(dt2$ci_high1)
+
+
+
+# Create Variables for table
+
+dt2$'OR (95% CI)' <- paste(c("1.43 (1.08, 1.91)",
+                            "0.72 (0.52, 0.98)",
+                            "1.03 (1.01, 1.05)",
+                            "1.08 (0.80, 1.44)",
+                            "0.98 (0.93, 1.04)",
+                            "", "---",
+                            "1.07 (0.80, 1.43)",
+                            "0.75 (0.46, 1.21)",
+                            "1.63 (0.94, 2.81)"
+                            ))
+
+
+dt2$'P-value' <- paste(c("0.014",
+                        "0.039",
+                        "0.008",
+                        "0.6",
+                        "0.5",
+                        "", "---",
+                        "0.7",
+                        "0.2",
+                        "0.082"
+                        ))
+
+dt2$ES <- paste(c("0.198",
+                 "-0.182",
+                 "0.016",
+                 "0.042",
+                 "-0.01",
+                 "", "---",
+                 "0.035",
+                 "-0.158",
+                 "0.268"
+                 
+                 ))
+
+
+# Create Empty column for Forest Plot
+dt2$` ` <- paste(rep(" ", 20), collapse = " ")
+
+
+# Set theme
+
+tm <- forest_theme(base_size = 10,
+                   refline_lty = "solid",
+                   ci_pch = c(15, 15, 15),
+                    ci_lwd = 1,
+                   ci_col = c("#377eb8", "#4daf4a", "red"),
+                   footnote_gp = gpar(col = "blue"),
+                   legend_name = "Dependent Variable\n",
+                   legend_value = c("Course Activities", "Office Hours", "Attend Class"),
+                   # Table cell padding, width 4 and heights 3
+                   core = list(padding = unit(c(10, 2), "mm")))
+
+# Graph
+
+p2 <- forest(dt2[, c(1, 5, 6, 7, 8)],
+            est = dt2$OR1,
+            lower = dt2$ci_low1,
+            upper = dt2$ci_high1,
+            ci_column = 5,
+            ref_line = 1,
+arrow_lab = c("Less Likely Food Insecure", "More Likely Food Insecure"),
+            xlim = c(0, 3),
+       nudge_y = 0,
+            ticks_at = c(0.5, 1, 1.5, 2, 2.5), theme = tm)
+
+
+
+
+# ggplot2::ggsave(filename = "Figure2.png", plot = p2,
+#                 dpi = 600,
+#                 width = 8, height = 3, units = "in")
+
+
+
+
+
+
+
+
+# BW Plot -------------------------------------------------------------------------------------
+
+# Set theme
+
+tm2 <- forest_theme(base_size = 10,
+                   refline_lty = "solid",
+                   ci_pch = c(15, 15, 15),
+                    ci_lwd = 1,
+                   ci_col = c("#000000", "#444444", "#888888"),
+                   footnote_gp = gpar(col = "blue"),
+                   legend_name = "Dependent Variable\n",
+                   legend_value = c("Course Activities", "Office Hours", "Attend Class"),
+                   # Table cell padding, width 4 and heights 3
+                   core = list(padding = unit(c(10, 2), "mm"), fg_params = list(hjust = 0, x = 0.1),
+                               bg_params = list(fill = c("#EEEEEE","white")))
+                   )
+
+# Graph
+
+p2.1 <- forest(dt2[, c(1, 5, 6, 7, 8)],
+            est = dt2$OR1,
+            lower = dt2$ci_low1,
+            upper = dt2$ci_high1,
+            ci_column = 5,
+            ref_line = 1,
+arrow_lab = c("Less Likely Food Insecure", "More Likely Food Insecure"),
+            xlim = c(0, 3),
+       nudge_y = 0,
+            ticks_at = c(0.5, 1, 1.5, 2, 2.5), theme = tm2)
+
+
+
+# 
+# ggplot2::ggsave(filename = "Figure2_BW.png", plot = p2.1,
+#                 dpi = 600,
+#                 width = 8, height = 3, units = "in")
+
+
+```
+
+
+
+
+# Figure 3: SNAP vs Course Activities
+
+
+```{r}
+
+
+df2_2 <- data_1 %>% select(c(calfresh_char,course_activities_char,
+                             office_hours_char,
+                             attend_class_char)) %>% tidyr::pivot_longer(cols = c(course_activities_char,
+                             office_hours_char,
+                             attend_class_char))
+
+
+df2_2$calfresh_char <- recode(df2_2$calfresh_char,
+                      "No CalFresh" = "Non Recipient",
+                      "CalFresh" = "SNAP Recipient")
+
+
+
+
+df2_2 <- df2_2 %>%
+  count(calfresh_char, name, value) %>%
+  group_by(name, calfresh_char) %>%  # Grouping within bars
+  mutate(percent = round(100 * n / sum(n), 1),
+         label = paste0("n = ", n, "\n(", round(percent, 1), "%)"))
+
+
+df2_2 <- df2_2 %>%
+  filter(value == "Agree")
+
+
+df2_2$name <- recode(df2_2$name, "course_activities_char" = "Course Activities",
+                     "office_hours_char" = "Office Hours",
+                     "attend_class_char" = "Attend Class")
+
+df2_2$name <- factor(df2_2$name, levels = c("Course Activities", "Office Hours", "Attend Class"))
+
+p4 <- ggplot(df2_2, aes(x = calfresh_char, y = percent, fill = calfresh_char)) +
+  geom_bar(stat = "identity", position = "dodge") + ylab("Percent That Agree") +
+  geom_text(aes(label = label),
+            position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 4) + ylim(0, 100) + 
+  scale_fill_manual(values = c("#377eb8", "#b5e2ff")) +
+  xlab("") +theme_bw() + theme(legend.position = "none", text = element_text(size = 14)) +
+  facet_wrap(~name)
+
+
+
+
+
+# ggplot2::ggsave(filename = "Figure3.png", plot = p4,
+#                 dpi = 600,
+#                 width = 9, height = 5, units = "in")
+
+
+
+# BW Plot -------------------------------------------------------------------------
+
+
+p4.1 <- ggplot(df2_2, aes(x = calfresh_char, y = percent, fill = calfresh_char)) +
+  geom_bar(stat = "identity", position = "dodge") + ylab("Percent That Agree") +
+  geom_text(aes(label = label),
+            position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 4) + ylim(0, 100) + 
+  scale_fill_manual(values = c("#000000", "#444444")) +
+  xlab("") + theme_bw() + theme(legend.position = "none", text = element_text(size = 14)) +
+  facet_wrap(~name)
+
+
+
+
+
+# ggplot2::ggsave(filename = "Figure3_BW.png", plot = p4.1,
+#                 dpi = 600,
+#                 width = 9, height = 5, units = "in")
+
+
+```
+
+
+
+
+
+## Figure 4
+
+```{r}
+
+
+# Create Data Frame
+
+dt <- data.frame(
+  "Variable" = c("SNAP Recipient",
+                 "Men",
+                 "Age",
+                 "Hispanic/Latino",
+                 "Enrolled Units",
+               "Campus Type",
+               "     CCC (Ref)",
+               "     CSU",
+               "     UC",
+               "Food Insecure",
+               "First-Generation\nStudent"),
+  OR1 = c(1.22, 1.63, 1.00, 0.76, 1.00, "", "", 0.95, 0.79, 0.63, 1.16),
+  ci_low1 = c(0.96, 1.22, 0.98, 0.59, 0.95, "", "", 0.73, 0.51, 0.50, 0.67),
+  ci_high1 = c(1.56, 2.18, 1.01, 0.99, 1.06, "", "", 1.24, 1.24, 0.80, 2.02),
+  
+    OR2 = c(1.17, 1.42, 0.99, 0.76, 0.99, "", "", 0.64, 0.78, 0.52, 1.11),
+  ci_low2 = c(0.89, 1.05, 0.97, 0.59, 0.94, "", "", 0.49, 0.50, 0.41, 0.64),
+  ci_high2 = c(1.54, 1.92, 1.01, 0.98, 1.05, "","", 0.84, 1.21, 0.65, 1.94),
+  
+    OR3 = c(0.96, 1.11, 0.99, 1.08, 1.02, "", "", 0.97, 1.14, 0.46, 0.96),
+  ci_low3 = c(0.70, 0.77, 0.97, 0.8, 0.95, "","", 0.71, 0.65, 0.34, 0.49),
+  ci_high3 = c(1.32, 1.61, 1.00, 1.45, 1.09, "", "", 1.31, 2.01, 0.62, 1.88)
+  
+)
+
+
+## Convert to Numeric
+
+dt$OR1 <- as.numeric(dt$OR1)
+dt$ci_low1 <- as.numeric(dt$ci_low1)
+dt$ci_high1 <- as.numeric(dt$ci_high1)
+
+dt$OR2 <- as.numeric(dt$OR2)
+dt$ci_low2 <- as.numeric(dt$ci_low2)
+dt$ci_high2 <- as.numeric(dt$ci_high2)
+
+
+dt$OR3 <- as.numeric(dt$OR3)
+dt$ci_low3 <- as.numeric(dt$ci_low3)
+dt$ci_high3 <- as.numeric(dt$ci_high3)
+
+
+# Create Variables for table
+
+dt$'OR (95% CI)' <- paste(c("1.22 (0.96, 1.56) \n1.17 (0.89, 1.54) \n0.96 (0.70, 1.32)",
+                            "1.63 (1.22, 2.18) \n1.42 (1.05, 1.92) \n1.11 (0.77, 1.61)",
+                            "1.00 (0.98, 1.01) \n0.99 (0.97, 1.01) \n0.99 (0.97, 1.00)",
+                            "0.76 (0.59, 0.99) \n0.76 (0.59, 0.98) \n1.08 (0.80, 1.45)",
+                            "1.00 (0.95, 1.06) \n0.99 (0.94, 1.05) \n1.02 (0.95, 1.09)",
+                            "", "---", 
+                  "0.95 (0.73, 1.24) \n0.64 (0.49, 0.84) \n0.97 (0.71, 1.31)",
+                  "0.79 (0.51, 1.24) \n0.78 (0.50, 1.21) \n1.14 (0.65, 2.01)",
+                  "0.63 (0.50, 0.80) \n0.52 (0.41, 0.65) \n0.46 (0.34, 0.62)",
+                  "1.16 (0.67, 2.02) \n1.11 (0.64, 1.94) \n0.96 (0.49, 1.88)"))
+
+
+dt$'P-value' <- paste(c("0.11 \n0.3 \n0.8",
+                        "0.001 \n0.022 \n0.6",
+                        "0.5 \n0.2 \n0.1",
+                        "0.040 \n0.036 \n0.6",
+                        "0.9 \n0.7 \n0.6",
+                        "", "---", 
+                  "0.7 \n0.002 \n0.8",
+                  "0.3 \n0.3 \n0.7",
+                  "<0.001 \n<0.001 \n<0.001",
+                  "0.6 \n0.7 \n>0.9"))
+
+dt$ES <- paste(c("0.110 \n0.086 \n-0.022", 
+                 "0.268 \n0.194 \n0.060",
+                 "-0.003 \n-0.006 \n-0.008",
+                 "-0.150 \n-0.151 \n0.042",
+                 "0.002 \n-0.005 \n0.010",
+                 "", "---", 
+                  "-0.029 \n-0.244 \n-0.019",
+                 "-0.128 \n-0.140 \n0.071",
+                 "-0.252 \n-0.362 \n-0.432",
+                 "0.082 \n0.058 \n-0.021"))
+
+
+# Create Empty column for Forest Plot
+dt$` ` <- paste(rep(" ", 20), collapse = " ")
+
+
+# Set theme
+
+tm <- forest_theme(base_size = 10,
+                   refline_lty = "solid",
+                   ci_pch = c(15, 15, 15),
+                    ci_lwd = 1,
+                   ci_col = c("#377eb8", "#4daf4a", "red"),
+                   footnote_gp = gpar(col = "blue"),
+                   legend_name = "Dependent Variable\n",
+                   legend_value = c("Course Activities", "Office Hours", "Attend Class"),
+                   # Table cell padding, width 4 and heights 3
+                   core = list(padding = unit(c(10, 2), "mm")))
+
+# Graph
+
+p <- forest(dt[, c(1, 11, 12, 13, 14)],
+            est = list(dt$OR1, dt$OR2, dt$OR3),
+            lower = list(dt$ci_low1, dt$ci_low2, dt$ci_low3), 
+            upper = list(dt$ci_high1, dt$ci_high2, dt$ci_high3),
+            ci_column = 5,
+            ref_line = 1,
+arrow_lab = c("Worse Academic Success","Better Academic Success"),
+            xlim = c(0, 2.5),
+       nudge_y = 0.33,
+            ticks_at = c(0.5, 1, 1.5, 2), theme = tm)
+
+
+
+
+# ggplot2::ggsave(filename = "Figure4.png", plot = p,
+#                 dpi = 600,
+#                 width = 8, height = 7, units = "in")
+
+
+
+
+
+
+# For BW Plot --------------------------------------------------------------------------------------------
+
+
+# Set theme
+
+tm2 <- forest_theme(base_size = 10,
+                   refline_lty = "solid",
+                   ci_pch = c(15, 16, 18),
+                    ci_lwd = 1,
+                    ci_col = c("#000000", "#444444", "#888888"),
+                   footnote_gp = gpar(col = "blue"),
+                   legend_name = "Dependent Variable\n",
+core = list(padding = unit(c(10, 2), "mm"), fg_params = list(hjust = 0, x = 0.1),
+                               bg_params = list(fill = c("#EEEEEE","white"))),
+                   legend_value = c("Course Activities", "Office Hours", "Attend Class"))
+
+# Graph
+
+p1.1 <- forest(dt[, c(1, 11, 12, 13, 14)],
+            est = list(dt$OR1, dt$OR2, dt$OR3),
+            lower = list(dt$ci_low1, dt$ci_low2, dt$ci_low3), 
+            upper = list(dt$ci_high1, dt$ci_high2, dt$ci_high3),
+            ci_column = 5,
+            ref_line = 1,
+arrow_lab = c("Worse Academic Success","Better Academic Success"),
+            xlim = c(0, 2.5),
+       nudge_y = 0.33,
+            ticks_at = c(0.5, 1, 1.5, 2), theme = tm2)
+
+
+
+
+# ggplot2::ggsave(filename = "Figure4_bw.png", plot = p1.1,
+#                 dpi = 600,
+#                 width = 8, height = 7, units = "in")
+
+
+
+
+```
+
+
+
+# Figure 5: Perceived benefits of SNAP among SNAP recipients.
+
+
+```{r}
+
+# Only select current CalFresh Users or past users as college students
+# Use filtered data
+df3_3 <- bns %>% filter(q46_1 == "Currently use as a college student" | 
+                 q46_1 == "Used it in the past as a college student") %>% 
+  select(SNAP_course_activities, SNAP_office_hours, SNAP_attend_class, SNAP_not_worry_abt_food)
+
+
+df3_3 <- df3_3 %>% select(c(SNAP_course_activities, SNAP_office_hours, SNAP_attend_class, SNAP_not_worry_abt_food)) %>% tidyr::pivot_longer(cols = c(SNAP_course_activities, SNAP_office_hours, SNAP_attend_class, SNAP_not_worry_abt_food))
+
+
+df3_3 <- df3_3 %>%
+  filter(!is.na(value)) %>%
+  count(name, value) %>%
+  group_by(name) %>%
+  mutate(percent = round(100 * n / sum(n), 1),
+         label = paste0("n = ", n, "\n(", round(percent, 1), "%)"))
+
+
+df3_3$name <- recode(df3_3$name, 
+                     "SNAP_attend_class" = "I had more time to attend all my classes.",
+                      "SNAP_course_activities" = "I kept up with course materials, for example reading, writing, and preparing for exams and course assignments.",
+                      "SNAP_office_hours" = "I had more time to go to my professors’ office hours and tutoring services when needed.",
+                     "SNAP_not_worry_abt_food" = "I did not worry about whether I would run out of food or whether my food would last each month.")
+
+
+
+df3_3 <- df3_3 %>%
+  filter(value == "Agree")
+
+
+p5 <- ggplot(df3_3, aes(x = name, y = percent, fill = name)) +
+  geom_bar(stat = "identity", position = "dodge") + ylab("Percent that Agree") +
+  geom_text(aes(label = label),
+            position = position_dodge(width = 0.9),
+            vjust = 0.55, hjust = -0.2, size = 4) + ylim(0, 100) +
+  xlab("") + theme_bw() + theme(legend.position = "none", text = element_text(size = 14)) +
+  labs(fill = "") + coord_flip() +
+  scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 50)) + 
+  scale_fill_manual(values = c("#377eb8", "#377eb8", "#377eb8", "#377eb8"))
+
+
+
+
+
+# ggplot2::ggsave(filename = "Figure5.png", plot = p5,
+#                 dpi = 600,
+#                 width = 8, height = 4, units = "in")
+
+
+
+
+
+
+
+
+# BW Plots ----------------------------------------------
+
+
+p5.1 <- ggplot(df3_3, aes(x = name, y = percent, fill = name)) +
+  geom_bar(stat = "identity", position = "dodge") + ylab("Percent that Agree") +
+  geom_text(aes(label = label),
+            position = position_dodge(width = 0.9),
+            vjust = 0.55, hjust = -0.2, size = 4) + ylim(0, 100) +
+  xlab("") + theme_bw() + theme(legend.position = "none", text = element_text(size = 14)) +
+  labs(fill = "") + coord_flip() +
+  scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 50)) + 
+  scale_fill_manual(values = c("#444444", "#444444", "#444444", "#444444"))
+
+
+
+
+
+# ggplot2::ggsave(filename = "Figure5_BW.png", plot = p5.1,
+#                 dpi = 600,
+#                 width = 8, height = 4, units = "in")
+
+
+
+```
+
+
+
+:::
+
+
+
+
+
+
